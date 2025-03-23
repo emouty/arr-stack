@@ -1,0 +1,453 @@
+networks:
+  mediastack:
+    name: mediastack
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: ${DOCKER_SUBNET:?err}
+          gateway: ${DOCKER_GATEWAY:?err}
+secrets:
+  plex_claim:
+    file: ./secret.d/plex_claim
+  vpn_password:
+    file: ./secret.d/vpn_password
+  vpn_username:
+    file: ./secret.d/vpn_username
+  mail_password:
+    file: ./secret.d/mail_password
+  cloudflared_apikey:
+    file: ./secret.d/cloudflared_apikey
+services:
+  traefik:
+    image: "traefik:latest"
+    container_name: "traefik"
+    command:
+      #- "--log.level=DEBUG"
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entryPoints.web.address=:80"
+    ports:
+      - "80:80"
+      - "8080:8080"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    networks:
+      - default
+      - mediastack
+    labels:
+      - "traefik.http.routers.traefik.rule=Host(`traefik.${SERVER_HOSTNAME}`)"
+      - "traefik.http.services.traefik.loadbalancer.server.port=8080"
+      - "traefik.http.routers.traefik.entrypoints=web"
+  traefik-avahi-helper:
+    container_name: "traefik-avahi-helper"
+    image: hardillb/traefik-avahi-helper
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket
+    restart: unless-stopped
+    depends_on:
+      traefik:
+        condition: service_started
+    networks:
+      - default
+      - mediastack
+  gluetun:
+    image: qmcgaw/gluetun:latest
+    container_name: gluetun
+    restart: always
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    ports:
+      - "8888:8888/tcp" # Gluetun Local Network HTTP proxy
+      - "8388:8388/tcp" # Gluetun Local Network Shadowsocks
+      - "8388:8388/udp" # Gluetun Local Network Shadowsocks
+      - "${WEBUI_PORT_QBITTORRENT:?err}:${WEBUI_PORT_QBITTORRENT:?err}" # WebUI Portal: qBittorrent
+      - "${QBIT_PORT:?err}:6881" # Transmission Torrent Port
+
+    volumes:
+      - ${FOLDER_FOR_DATA:?err}/gluetun:/gluetun
+    environment:
+      - PUID=${PUID:?err}
+      - PGID=${PGID:?err}
+      - UMASK=${UMASK:?err}
+      - TZ=${TIMEZONE:?err}
+      - VPN_SERVICE_PROVIDER=${VPN_SERVICE_PROVIDER:?err}
+      - OPENVPN_USER_FILE=/run/secrets/vpn_username
+      - OPENVPN_PASSWORD_FILE=/run/secrets/vpn_password
+      - SERVER_COUNTRIES=${SERVER_COUNTRIES}
+      - SERVER_REGIONS=${SERVER_REGIONS}
+      - SERVER_CITIES=${SERVER_CITIES}
+      - SERVER_HOSTNAMES=${SERVER_HOSTNAMES}
+      - SERVER_CATEGORIES=${SERVER_CATEGORIES}
+      - FIREWALL_OUTBOUND_SUBNETS=${LOCAL_SUBNET:?err}
+      - OPENVPN_CUSTOM_CONFIG=${OPENVPN_CUSTOM_CONFIG}
+      - PORT_FORWARD_ONLY=${VPN_PORT_FORWARD_ONLY:?err}
+      - HTTP_CONTROL_SERVER_ADDRESS=:${GLUETUN_CONTROL_PORT:?err}
+      - VPN_TYPE=${VPN_TYPE}
+      - VPN_ENDPOINT_IP=${VPN_ENDPOINT_IP}
+      - VPN_ENDPOINT_PORT=${VPN_ENDPOINT_PORT}
+      - WIREGUARD_PUBLIC_KEY=${WIREGUARD_PUBLIC_KEY}
+      - WIREGUARD_PRIVATE_KEY=${WIREGUARD_PRIVATE_KEY}
+      - WIREGUARD_PRESHARED_KEY=${WIREGUARD_PRESHARED_KEY}
+      - WIREGUARD_ADDRESSES=${WIREGUARD_ADDRESSES}
+      - HTTPPROXY=on
+      - SHADOWSOCKS=on
+    # NOTE: Gluetun VPN container MUST ONLY connect to the mediastack
+    secrets:
+      - vpn_username
+      - vpn_password
+    networks:
+      - mediastack
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.qbittorrent.rule=Host(`qbittorrent.${SERVER_HOSTNAME}`)"
+      - "traefik.http.services.qbittorrent.loadbalancer.server.port=${WEBUI_PORT_QBITTORRENT:?err}"
+      - "traefik.http.routers.qbittorrent.entrypoints=web"
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    restart: unless-stopped
+    volumes:
+      - ${FOLDER_FOR_DATA:?err}/qbittorrent:/config
+      - ${FOLDER_FOR_MEDIA:?err}:/data
+    environment:
+      - PUID=${PUID:?err}
+      - PGID=${PGID:?err}
+      - UMASK=${UMASK:?err}
+      - TZ=${TIMEZONE:?err}
+      - WEBUI_PORT=${WEBUI_PORT_QBITTORRENT:?err}
+      - DOCKER_MODS=ghcr.io/themepark-dev/theme.park:qbittorrent
+      - TP_THEME=${TP_THEME:?err}
+    ## Do Not Change Network for qBittorrent
+    ## qBittorrent MUST always use a VPN / Secure Internet connection
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_started
+  tinymediamanager:
+    image: tinymediamanager/tinymediamanager:latest
+    container_name: tinymediamanager
+    environment:
+      - USER_ID=${PUID:?err}
+      - GROUP_ID=${PGID:?err}
+      - ALLOW_DIRECT_VNC=true
+      - LC_ALL=en_US.UTF-8 # force UTF8
+      - LANG=en_US.UTF-8 # force UTF8
+      - PASSWORD=tiny
+    volumes:
+      - ${FOLDER_FOR_DATA:?err}/tinymediamanager:/data
+      - ${FOLDER_FOR_MEDIA:?err}:/media
+    ports:
+      - 5900:5900 # VNC port
+      - 4000:4000 # Webinterface
+    restart: unless-stopped
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    restart: unless-stopped
+    volumes:
+      - ${FOLDER_FOR_DATA:?err}/radarr:/config
+      - ${FOLDER_FOR_MEDIA:?err}:/data
+    ports:
+      - "${WEBUI_PORT_RADARR:?err}:7878"
+    environment:
+      - PUID=${PUID:?err}
+      - PGID=${PGID:?err}
+      - TZ=${TIMEZONE:?err}
+      - DOCKER_MODS=ghcr.io/themepark-dev/theme.park:radarr
+      - TP_THEME=${TP_THEME:?err}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.radarr.rule=Host(`radarr.${SERVER_HOSTNAME}`)"
+      - "traefik.http.services.radarr.loadbalancer.server.port=${WEBUI_PORT_RADARR:?err}"
+      - "traefik.http.routers.radarr.entrypoints=web"
+    networks:
+      - mediastack
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+    restart: unless-stopped
+    volumes:
+      - ${FOLDER_FOR_DATA:?err}/sonarr:/config
+      - ${FOLDER_FOR_MEDIA:?err}:/data
+    ports:
+      - "${WEBUI_PORT_SONARR:?err}:8989"
+    environment:
+      - PUID=${PUID:?err}
+      - PGID=${PGID:?err}
+      - TZ=${TIMEZONE:?err}
+      - DOCKER_MODS=ghcr.io/themepark-dev/theme.park:sonarr
+      - TP_THEME=${TP_THEME:?err}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.sonarr.rule=Host(`sonarr.${SERVER_HOSTNAME}`)"
+      - "traefik.http.services.sonarr.loadbalancer.server.port=${WEBUI_PORT_SONARR:?err}"
+      - "traefik.http.routers.sonarr.entrypoints=web"
+    networks:
+      - mediastack
+  bazarr:
+    image: lscr.io/linuxserver/bazarr:latest
+    container_name: bazarr
+    restart: unless-stopped
+    volumes:
+      - ${FOLDER_FOR_DATA:?err}/bazarr:/config
+      - ${FOLDER_FOR_MEDIA:?err}:/data
+    ports:
+      - "${WEBUI_PORT_BAZARR:?err}:6767"
+    environment:
+      - PUID=${PUID:?err}
+      - PGID=${PGID:?err}
+      - TZ=${TIMEZONE:?err}
+      - DOCKER_MODS=ghcr.io/themepark-dev/theme.park:bazarr
+      - TP_THEME=${TP_THEME:?err}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.bazarr.rule=Host(`bazarr.${SERVER_HOSTNAME}`)"
+      - "traefik.http.services.bazarr.loadbalancer.server.port=${WEBUI_PORT_BAZARR:?err}"
+      - "traefik.http.routers.bazarr.entrypoints=web"
+    networks:
+      - mediastack
+  overseerr:
+    image: lscr.io/linuxserver/overseerr:latest
+    container_name: overseerr
+    environment:
+      - PUID=${PUID:?err}
+      - PGID=${PGID:?err}
+      - TZ=${TIMEZONE:?err}
+    volumes:
+      - ${FOLDER_FOR_DATA:?err}/overseerr/config:/config
+    ports:
+      - "${WEBUI_PORT_OVERSEERR:?err}:5055"
+    restart: unless-stopped
+    depends_on:
+      radarr:
+        condition: service_started
+      sonarr:
+        condition: service_started
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.overseerr.rule=Host(`overseerr.${SERVER_HOSTNAME}`)"
+      - "traefik.http.services.overseerr.loadbalancer.server.port=${WEBUI_PORT_OVERSEERR:?err}"
+      - "traefik.http.routers.overseerr.entrypoints=web"
+    networks:
+      - mediastack
+  plex:
+    image: lscr.io/linuxserver/plex:latest
+    container_name: plex
+    restart: unless-stopped
+    # Add Configurations for GPU Hardware Rendering Here:
+    #    devices:
+    #      - /dev/dri/renderD128:/dev/dri/renderD128
+    #      - /dev/dri/card0:/dev/dri/card0
+    volumes:
+      - ${FOLDER_FOR_DATA:?err}/plex:/config
+      - ${FOLDER_FOR_MEDIA:?err}/media:/data/media
+    ports:
+      - "${WEBUI_PORT_PLEX:?err}:32400"
+      #      - 1900:1900/udp
+      #      - 5353:5353/udp
+      - 8324:8324
+      - 32410:32410/udp
+      - 32412:32412/udp
+      - 32413:32413/udp
+      - 32414:32414/udp
+      - 32469:32469
+    environment:
+      - PUID=${PUID:?err}
+      - PGID=${PGID:?err}
+      - UMASK=${UMASK:?err}
+      - TZ=${TIMEZONE:?err}
+      - VERSION=docker
+      - PLEX_CLAIM_FILE=/run/secrets/plex_claim
+    secrets:
+      - plex_claim
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.plex.rule=Host(`plex.${SERVER_HOSTNAME}`)"
+      - "traefik.http.services.plex.loadbalancer.server.port=${WEBUI_PORT_PLEX:?err}"
+      - "traefik.http.routers.plex.entrypoints=web"
+    networks:
+      - mediastack
+  byparr:
+    image: ghcr.io/thephaseless/byparr:latest
+    container_name: byparr
+    restart: unless-stopped
+    ports:
+      - "${BYPARR_PORT:?err}:8191"
+    environment:
+      - LOG_LEVEL=info
+      - LOG_HTML=false
+      - CAPTCHA_SOLVER=none
+      - TZ=${TIMEZONE:?err}
+    networks:
+      - mediastack
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr
+    restart: unless-stopped
+    ports:
+      - "${FLARESOLVERR_PORT:?err}:8191"
+    environment:
+      - LOG_LEVEL=info
+      - LOG_HTML=false
+      - CAPTCHA_SOLVER=none
+      - TZ=${TIMEZONE:?err}
+    networks:
+      - mediastack
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:develop
+    container_name: prowlarr
+    restart: unless-stopped
+    volumes:
+      - ${FOLDER_FOR_DATA:?err}/prowlarr:/config
+    ports:
+      - "${WEBUI_PORT_PROWLARR:?err}:9696"
+    environment:
+      - PUID=${PUID:?err}
+      - PGID=${PGID:?err}
+      - TZ=${TIMEZONE:?err}
+      - DOCKER_MODS=ghcr.io/themepark-dev/theme.park:prowlarr
+      - TP_THEME=${TP_THEME:?err}
+    depends_on:
+      flaresolverr:
+        condition: service_started
+      byparr:
+        condition: service_started
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.prowlarr.rule=Host(`prowlarr.${SERVER_HOSTNAME}`)"
+      - "traefik.http.services.prowlarr.loadbalancer.server.port=${WEBUI_PORT_PROWLARR:?err}"
+      - "traefik.http.routers.prowlarr.entrypoints=web"
+    networks:
+      - mediastack
+  homarr:
+    image: ghcr.io/ajnart/homarr:latest
+    container_name: homarr
+    restart: unless-stopped
+    ports:
+      - "${WEBUI_PORT_HOMARR:?err}:7575"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${FOLDER_FOR_DATA:?err}/homarr/configs:/app/data/configs
+      - ${FOLDER_FOR_DATA:?err}/homarr/icons:/app/public/icons
+      - ${FOLDER_FOR_DATA:?err}/homarr/data:/data
+    environment:
+      - PUID=${PUID:?err}
+      - PGID=${PGID:?err}
+      - UMASK=${UMASK:?err}
+      - TZ=${TIMEZONE:?err}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.homarr.rule=Host(`homarr.${SERVER_HOSTNAME}`)"
+      - "traefik.http.services.homarr.loadbalancer.server.port=7575"
+      - "traefik.http.routers.homarr.entrypoints=web"
+    networks:
+      - mediastack
+  jellyfin:
+    image: lscr.io/linuxserver/jellyfin:latest
+    container_name: jellyfin
+    restart: unless-stopped
+# Add Configurations for GPU Hardware Rendering Here:
+#    devices:
+#      - /dev/dri/renderD128:/dev/dri/renderD128
+#      - /dev/dri/card0:/dev/dri/card0
+    volumes:
+      - ${FOLDER_FOR_DATA:?err}/jellyfin:/config
+      - ${FOLDER_FOR_MEDIA:?err}/media:/data/media
+    ports:
+      - "${WEBUI_PORT_JELLYFIN:?err}:8096"
+#      - 7359:7359/udp      # Enable for DLNA - Only works on HOST Network Mode
+#      - 1900:1900/udp      # Enable for DLNA - Only works on HOST Network Mode
+    environment:
+      - PUID=${PUID:?err}
+      - PGID=${PGID:?err}
+      - UMASK=${UMASK:?err}
+      - TZ=${TIMEZONE:?err}
+    networks:
+      - mediastack
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.jellyfin.rule=Host(`jellyfin.${SERVER_HOSTNAME}`)"
+      - "traefik.http.services.jellyfin.loadbalancer.server.port=8096"
+      - "traefik.http.routers.jellyfin.entrypoints=web"
+  jellyseerr:
+    image: fallenbagel/jellyseerr:latest
+    container_name: jellyseerr
+    restart: unless-stopped
+    volumes:
+      - ${FOLDER_FOR_DATA:?err}/jellyseerr:/app/config
+    ports:
+      - "${WEBUI_PORT_JELLYSEERR:?err}:5055"
+    environment:
+      - PUID=${PUID:?err}
+      - PGID=${PGID:?err}
+      - UMASK=${UMASK:?err}
+      - TZ=${TIMEZONE:?err}
+    networks:
+      - mediastack
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.jellyseerr.rule=Host(`jellyseerr.${SERVER_HOSTNAME}`)"
+      - "traefik.http.services.jellyseerr.loadbalancer.server.port=5055"
+      - "traefik.http.routers.jellyseerr.entrypoints=web"
+  suggestarr:
+    image: ciuse99/suggestarr:latest
+    container_name: SuggestArr
+    restart: unless-stopped
+    ports:
+      - "${WEBUI_PORT_SUGGESTARR}:5000"
+    volumes:
+      - ${FOLDER_FOR_DATA:?err}/suggestarr:/app/config/config_files
+    environment:
+      # Optional: Only needed if something goes wrong and you need to inspect deeper
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    networks:
+      - mediastack
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.suggestarr.rule=Host(`suggestarr.${SERVER_HOSTNAME}`)"
+      - "traefik.http.services.suggestarr.loadbalancer.server.port=5000"
+      - "traefik.http.routers.suggestarr.entrypoints=web"
+  tunnel:
+   container_name: tunnel
+   restart: always
+   image: cloudflare/cloudflared:latest
+   command: tunnel --no-autoupdate run
+   labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+   environment:
+      TUNNEL_TOKEN_FILE: /run/secrets/cloudflared_apikey
+   secrets:
+      - cloudflared_apikey
+   networks:
+      - mediastack
+  watchtower:
+    container_name: watchtower
+    image: containrrr/watchtower:latest
+    restart: always
+    ports:
+      - "9999:8080"
+    environment:
+      WATCHTOWER_NOTIFICATIONS: email
+      WATCHTOWER_NOTIFICATION_EMAIL_FROM: ${MAIL_FROM}
+      WATCHTOWER_NOTIFICATION_EMAIL_TO:  erwan.moutymbo@gmail.com
+      WATCHTOWER_NOTIFICATION_EMAIL_SERVER: ${MAIL_HOST}
+      WATCHTOWER_NOTIFICATION_EMAIL_SERVER_PORT: ${MAIL_PORT}
+      WATCHTOWER_NOTIFICATION_EMAIL_SERVER_USER: ${MAIL_USERNAME}
+      WATCHTOWER_NOTIFICATION_EMAIL_SERVER_PASSWORD_FILE: /run/secrets/mail_password
+      WATCHTOWER_NOTIFICATION_EMAIL_DELAY: 2
+      WATCHTOWER_NO_STARTUP_MESSAGE: true
+      WATCHTOWER_CLEANUP: true
+      WATCHTOWER_LABEL_ENABLE: false
+      WATCHTOWER_HTTP_API_METRICS: true
+      WATCHTOWER_HTTP_API_TOKEN: c27898d2-aff6-410b-ac28-a8d384a70425
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    secrets:
+      - mail_password
+    networks:
+      - mediastack
