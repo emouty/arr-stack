@@ -16,8 +16,6 @@ secrets:
     file: ./secret.d/vpn_username
   mail_password:
     file: ./secret.d/mail_password
-  cloudflared_apikey:
-    file: ./secret.d/cloudflared_apikey
 services:
   traefik:
     image: "traefik:latest"
@@ -129,6 +127,8 @@ services:
       gluetun:
         condition: service_started
   tinymediamanager:
+    profiles:
+      - all
     image: tinymediamanager/tinymediamanager:latest
     container_name: tinymediamanager
     environment:
@@ -212,6 +212,8 @@ services:
     networks:
       - mediastack
   overseerr:
+    profiles:
+      - plex
     image: lscr.io/linuxserver/overseerr:latest
     container_name: overseerr
     environment:
@@ -412,6 +414,20 @@ services:
       - "traefik.http.routers.suggestarr.rule=Host(`suggestarr.${SERVER_HOSTNAME}`)"
       - "traefik.http.services.suggestarr.loadbalancer.server.port=5000"
       - "traefik.http.routers.suggestarr.entrypoints=web"
+  wizarr:
+    container_name: wizarr
+    image: ghcr.io/wizarrrr/wizarr:latest
+    ports:
+      - ${WEBUI_PORT_WIZARR}:5690
+    volumes:
+      - ${FOLDER_FOR_DATA:?err}/wizarr/database:/data/database
+    networks:
+      - mediastack
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.wizarr.rule=Host(`wizarr.${SERVER_HOSTNAME}`)"
+      - "traefik.http.services.wizarr.loadbalancer.server.port=5690"
+      - "traefik.http.routers.wizarr.entrypoints=web"
   tunnel:
    container_name: tunnel
    restart: always
@@ -420,9 +436,7 @@ services:
    labels:
       - "com.centurylinklabs.watchtower.enable=true"
    environment:
-      TUNNEL_TOKEN_FILE: /run/secrets/cloudflared_apikey
-   secrets:
-      - cloudflared_apikey
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN}
    networks:
       - mediastack
   watchtower:
@@ -434,7 +448,7 @@ services:
     environment:
       WATCHTOWER_NOTIFICATIONS: email
       WATCHTOWER_NOTIFICATION_EMAIL_FROM: ${MAIL_FROM}
-      WATCHTOWER_NOTIFICATION_EMAIL_TO:  erwan.moutymbo@gmail.com
+      WATCHTOWER_NOTIFICATION_EMAIL_TO:  ${MAIL_TO}
       WATCHTOWER_NOTIFICATION_EMAIL_SERVER: ${MAIL_HOST}
       WATCHTOWER_NOTIFICATION_EMAIL_SERVER_PORT: ${MAIL_PORT}
       WATCHTOWER_NOTIFICATION_EMAIL_SERVER_USER: ${MAIL_USERNAME}
@@ -443,8 +457,8 @@ services:
       WATCHTOWER_NO_STARTUP_MESSAGE: true
       WATCHTOWER_CLEANUP: true
       WATCHTOWER_LABEL_ENABLE: false
-      WATCHTOWER_HTTP_API_METRICS: true
-      WATCHTOWER_HTTP_API_TOKEN: c27898d2-aff6-410b-ac28-a8d384a70425
+      WATCHTOWER_HTTP_API_METRICS: ${WATCHTOWER_HTTP_API_METRICS_ENABLED}
+      WATCHTOWER_HTTP_API_TOKEN: ${WATCHTOWER_HTTP_API_TOKEN}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     secrets:
