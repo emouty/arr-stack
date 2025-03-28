@@ -20,6 +20,7 @@ services:
   traefik:
     image: "traefik:latest"
     container_name: "traefik"
+    restart: unless-stopped
     command:
       #- "--log.level=DEBUG"
       - "--api.insecure=true"
