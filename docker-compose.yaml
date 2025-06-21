@@ -397,24 +397,24 @@ services:
       - "traefik.http.routers.jellyseerr.rule=Host(`jellyseerr.${SERVER_HOSTNAME}`)"
       - "traefik.http.services.jellyseerr.loadbalancer.server.port=5055"
       - "traefik.http.routers.jellyseerr.entrypoints=web"
-  suggestarr:
-    image: ciuse99/suggestarr:latest
-    container_name: SuggestArr
-    restart: unless-stopped
-    ports:
-      - "${WEBUI_PORT_SUGGESTARR}:5000"
-    volumes:
-      - ${FOLDER_FOR_DATA:?err}/suggestarr:/app/config/config_files
-    environment:
+#  suggestarr:
+#    image: ciuse99/suggestarr:latest
+#    container_name: SuggestArr
+#    restart: unless-stopped
+#    ports:
+#      - "${WEBUI_PORT_SUGGESTARR}:5000"
+#    volumes:
+#      - ${FOLDER_FOR_DATA:?err}/suggestarr:/app/config/config_files
+#    environment:
       # Optional: Only needed if something goes wrong and you need to inspect deeper
-      - LOG_LEVEL=${LOG_LEVEL:-info}
-    networks:
-      - mediastack
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.suggestarr.rule=Host(`suggestarr.${SERVER_HOSTNAME}`)"
-      - "traefik.http.services.suggestarr.loadbalancer.server.port=5000"
-      - "traefik.http.routers.suggestarr.entrypoints=web"
+#      - LOG_LEVEL=${LOG_LEVEL:-info}
+#    networks:
+#      - mediastack
+#    labels:
+#      - "traefik.enable=true"
+#      - "traefik.http.routers.suggestarr.rule=Host(`suggestarr.${SERVER_HOSTNAME}`)"
+#      - "traefik.http.services.suggestarr.loadbalancer.server.port=5000"
+#      - "traefik.http.routers.suggestarr.entrypoints=web"
   wizarr:
     container_name: wizarr
     image: ghcr.io/wizarrrr/wizarr:latest
@@ -429,6 +429,60 @@ services:
       - "traefik.http.routers.wizarr.rule=Host(`wizarr.${SERVER_HOSTNAME}`)"
       - "traefik.http.services.wizarr.loadbalancer.server.port=5690"
       - "traefik.http.routers.wizarr.entrypoints=web"
+  tdarr:
+    image: ghcr.io/haveagitgat/tdarr:latest
+    container_name: tdarr
+    restart: unless-stopped
+    profiles:
+      - tdarr
+    volumes:
+      - ${FOLDER_FOR_DATA:?err}/tdarr/server:/app/server
+      - ${FOLDER_FOR_DATA:?err}/tdarr/configs:/app/configs
+      - ${FOLDER_FOR_DATA:?err}/tdarr/logs:/app/logs
+      - ${FOLDER_FOR_DATA:?err}/tdarr_transcode_cache:/temp
+      - ${FOLDER_FOR_MEDIA:?err}/media:/data
+    ports:
+      - "${TDARR_SERVER_PORT:?err}:${TDARR_SERVER_PORT:?err}"
+      - "${WEBUI_PORT_TDARR:?err}:${WEBUI_PORT_TDARR:?err}"
+    environment:
+      - PUID=${PUID:?err}
+      - PGID=${PGID:?err}
+      - UMASK=${UMASK:?err}
+      - TZ=${TIMEZONE:?err}
+      - serverIP=0.0.0.0
+      - serverPort=${TDARR_SERVER_PORT:?err}
+      - webUIPort=${WEBUI_PORT_TDARR:?err}
+      - internalNode=true
+      - nodeID=Tdarr_Server
+    networks:
+      - mediastack
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.tdarr.rule=Host(`tdarr.${SERVER_HOSTNAME}`)"
+      - "traefik.http.services.tdarr.loadbalancer.server.port=${WEBUI_PORT_TDARR:?err}"
+      - "traefik.http.routers.tdarr.entrypoints=web"
+
+  tdarr-node:
+    image: ghcr.io/haveagitgat/tdarr_node:latest
+    container_name: tdarr-node
+    profiles:
+      - tdarr
+    restart: unless-stopped
+    volumes:
+      - ${FOLDER_FOR_DATA:?err}/tdarr/configs:/app/configs
+      - ${FOLDER_FOR_DATA:?err}/tdarr/logs:/app/logs
+      - ${FOLDER_FOR_DATA:?err}/tdarr_transcode_cache:/temp
+      - ${FOLDER_FOR_MEDIA:?err}/media:/data
+    environment:
+      - PUID=${PUID:?err}
+      - PGID=${PGID:?err}
+      - UMASK=${UMASK:?err}
+      - TZ=${TIMEZONE:?err}
+      - nodeID=Tdarr_Node_1
+      - serverIP=tdarr
+      - serverPort=${TDARR_SERVER_PORT:?err}
+    networks:
+      - mediastack
   tunnel:
    container_name: tunnel
    restart: always
