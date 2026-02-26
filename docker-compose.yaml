@@ -18,7 +18,7 @@ secrets:
     file: ./secret.d/mail_password
 services:
   traefik:
-    image: "traefik:latest"
+    image: "traefik:v3.6.9"
     container_name: "traefik"
     restart: unless-stopped
     command:
@@ -27,6 +27,7 @@ services:
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
       - "--entryPoints.web.address=:80"
+      - "--ping=true"
     ports:
       - "80:80"
       - "8080:8080"
@@ -39,6 +40,13 @@ services:
       - "traefik.http.routers.traefik.rule=Host(`traefik.${SERVER_HOSTNAME}`)"
       - "traefik.http.services.traefik.loadbalancer.server.port=8080"
       - "traefik.http.routers.traefik.entrypoints=web"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
   traefik-avahi-helper:
     container_name: "traefik-avahi-helper"
     image: hardillb/traefik-avahi-helper
@@ -48,12 +56,21 @@ services:
     restart: unless-stopped
     depends_on:
       traefik:
-        condition: service_started
+        condition: service_healthy
     networks:
       - default
       - mediastack
+    healthcheck:
+      test: |
+          pgrep -f "node index.js" >/dev/null 2>&1 && \
+          pgrep -f "python cname.py" >/dev/null 2>&1
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
   gluetun:
-    image: qmcgaw/gluetun:latest
+    image: qmcgaw/gluetun:v3.41.1
     container_name: gluetun
     restart: always
     cap_add:
@@ -66,7 +83,6 @@ services:
       - "8388:8388/udp" # Gluetun Local Network Shadowsocks
       - "${WEBUI_PORT_QBITTORRENT:?err}:${WEBUI_PORT_QBITTORRENT:?err}" # WebUI Portal: qBittorrent
       - "${QBIT_PORT:?err}:6881" # Transmission Torrent Port
-
     volumes:
       - ${FOLDER_FOR_DATA:?err}/gluetun:/gluetun
     environment:
@@ -95,7 +111,6 @@ services:
       - WIREGUARD_ADDRESSES=${WIREGUARD_ADDRESSES}
       - HTTPPROXY=on
       - SHADOWSOCKS=on
-    # NOTE: Gluetun VPN container MUST ONLY connect to the mediastack
     secrets:
       - vpn_username
       - vpn_password
@@ -106,8 +121,15 @@ services:
       - "traefik.http.routers.qbittorrent.rule=Host(`qbittorrent.${SERVER_HOSTNAME}`)"
       - "traefik.http.services.qbittorrent.loadbalancer.server.port=${WEBUI_PORT_QBITTORRENT:?err}"
       - "traefik.http.routers.qbittorrent.entrypoints=web"
+    healthcheck:
+      test: ["CMD", "/gluetun-entrypoint", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
   qbittorrent:
-    image: lscr.io/linuxserver/qbittorrent:latest
+    image: linuxserver/qbittorrent:5.1.4
     container_name: qbittorrent
     restart: unless-stopped
     volumes:
@@ -121,23 +143,27 @@ services:
       - WEBUI_PORT=${WEBUI_PORT_QBITTORRENT:?err}
       - DOCKER_MODS=ghcr.io/themepark-dev/theme.park:qbittorrent
       - TP_THEME=${TP_THEME:?err}
-    ## Do Not Change Network for qBittorrent
-    ## qBittorrent MUST always use a VPN / Secure Internet connection
     network_mode: "service:gluetun"
     depends_on:
       gluetun:
-        condition: service_started
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f -s http://localhost:8200/api/v2/app/version || exit 1"]
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
   tinymediamanager:
     profiles:
-      - all
-    image: tinymediamanager/tinymediamanager:latest
+      - management
+    image: tinymediamanager/tinymediamanager:5.2.7.1
     container_name: tinymediamanager
     environment:
       - USER_ID=${PUID:?err}
       - GROUP_ID=${PGID:?err}
       - ALLOW_DIRECT_VNC=true
-      - LC_ALL=en_US.UTF-8 # force UTF8
-      - LANG=en_US.UTF-8 # force UTF8
+      - LC_ALL=en_US.UTF-8
+      - LANG=en_US.UTF-8
       - PASSWORD=tiny
     volumes:
       - ${FOLDER_FOR_DATA:?err}/tinymediamanager:/data
@@ -146,8 +172,32 @@ services:
       - 5900:5900 # VNC port
       - 4000:4000 # Webinterface
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  picard:
+    profiles:
+      - management
+    container_name: picard
+    image: mikenye/picard:2.13.3
+    ports:
+      - "5800:5800"
+    volumes:
+      - ${FOLDER_FOR_DATA:?err}/picard:/config
+      - ${FOLDER_FOR_MEDIA:?err}:/storage
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5800"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
   radarr:
-    image: lscr.io/linuxserver/radarr:latest
+    image: linuxserver/radarr:6.0.4
     container_name: radarr
     restart: unless-stopped
     volumes:
@@ -168,8 +218,15 @@ services:
       - "traefik.http.routers.radarr.entrypoints=web"
     networks:
       - mediastack
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7878/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
   sonarr:
-    image: lscr.io/linuxserver/sonarr:latest
+    image: linuxserver/sonarr:4.0.16
     container_name: sonarr
     restart: unless-stopped
     volumes:
@@ -190,8 +247,44 @@ services:
       - "traefik.http.routers.sonarr.entrypoints=web"
     networks:
       - mediastack
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8989/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  lidarr:
+    image: linuxserver/lidarr:3.1.0
+    container_name: lidarr
+    restart: unless-stopped
+    volumes:
+      - ${FOLDER_FOR_MEDIA:?err}:/data
+      - ${FOLDER_FOR_DATA:?err}/lidarr:/config
+    ports:
+      - "${WEBUI_PORT_LIDARR:?err}:8686"
+    environment:
+      - PUID=${PUID:?err}
+      - PGID=${PGID:?err}
+      - TZ=${TIMEZONE:?err}
+      - DOCKER_MODS=ghcr.io/themepark-dev/theme.park:lidarr
+      - TP_THEME=${TP_THEME:?err}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.lidarr.rule=Host(`lidarr.${SERVER_HOSTNAME}`)"
+      - "traefik.http.services.lidarr.loadbalancer.server.port=8686"
+      - "traefik.http.routers.lidarr.entrypoints=web"
+    networks:
+      - mediastack
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8686/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
   bazarr:
-    image: lscr.io/linuxserver/bazarr:latest
+    image: linuxserver/bazarr:1.5.6
     container_name: bazarr
     restart: unless-stopped
     volumes:
@@ -212,47 +305,22 @@ services:
       - "traefik.http.routers.bazarr.entrypoints=web"
     networks:
       - mediastack
-  overseerr:
-    profiles:
-      - plex
-    image: lscr.io/linuxserver/overseerr:latest
-    container_name: overseerr
-    environment:
-      - PUID=${PUID:?err}
-      - PGID=${PGID:?err}
-      - TZ=${TIMEZONE:?err}
-    volumes:
-      - ${FOLDER_FOR_DATA:?err}/overseerr/config:/config
-    ports:
-      - "${WEBUI_PORT_OVERSEERR:?err}:5055"
-    restart: unless-stopped
-    depends_on:
-      radarr:
-        condition: service_started
-      sonarr:
-        condition: service_started
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.overseerr.rule=Host(`overseerr.${SERVER_HOSTNAME}`)"
-      - "traefik.http.services.overseerr.loadbalancer.server.port=${WEBUI_PORT_OVERSEERR:?err}"
-      - "traefik.http.routers.overseerr.entrypoints=web"
-    networks:
-      - mediastack
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6767/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
   plex:
-    image: lscr.io/linuxserver/plex:latest
+    image: linuxserver/plex:1.43.0
     container_name: plex
     restart: unless-stopped
-    # Add Configurations for GPU Hardware Rendering Here:
-    #    devices:
-    #      - /dev/dri/renderD128:/dev/dri/renderD128
-    #      - /dev/dri/card0:/dev/dri/card0
     volumes:
       - ${FOLDER_FOR_DATA:?err}/plex:/config
       - ${FOLDER_FOR_MEDIA:?err}/media:/data/media
     ports:
       - "${WEBUI_PORT_PLEX:?err}:32400"
-      #      - 1900:1900/udp
-      #      - 5353:5353/udp
       - 8324:8324
       - 32410:32410/udp
       - 32412:32412/udp
@@ -275,8 +343,15 @@ services:
       - "traefik.http.routers.plex.entrypoints=web"
     networks:
       - mediastack
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:32400/identity"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
   byparr:
-    image: ghcr.io/thephaseless/byparr:latest
+    image: ghcr.io/thephaseless/byparr:2.1.0
     container_name: byparr
     restart: unless-stopped
     ports:
@@ -288,8 +363,15 @@ services:
       - TZ=${TIMEZONE:?err}
     networks:
       - mediastack
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8191/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
   flaresolverr:
-    image: ghcr.io/flaresolverr/flaresolverr:latest
+    image: ghcr.io/flaresolverr/flaresolverr:v3.4.6
     container_name: flaresolverr
     restart: unless-stopped
     ports:
@@ -301,8 +383,15 @@ services:
       - TZ=${TIMEZONE:?err}
     networks:
       - mediastack
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8191/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
   prowlarr:
-    image: lscr.io/linuxserver/prowlarr:develop
+    image: linuxserver/prowlarr:2.3.0
     container_name: prowlarr
     restart: unless-stopped
     volumes:
@@ -317,9 +406,9 @@ services:
       - TP_THEME=${TP_THEME:?err}
     depends_on:
       flaresolverr:
-        condition: service_started
+        condition: service_healthy
       byparr:
-        condition: service_started
+        condition: service_healthy
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.prowlarr.rule=Host(`prowlarr.${SERVER_HOSTNAME}`)"
@@ -327,8 +416,15 @@ services:
       - "traefik.http.routers.prowlarr.entrypoints=web"
     networks:
       - mediastack
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9696/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
   homarr:
-    image: ghcr.io/ajnart/homarr:latest
+    image: ghcr.io/homarr-labs/homarr:v1.53.2
     container_name: homarr
     restart: unless-stopped
     ports:
@@ -337,12 +433,13 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${FOLDER_FOR_DATA:?err}/homarr/configs:/app/data/configs
       - ${FOLDER_FOR_DATA:?err}/homarr/icons:/app/public/icons
-      - ${FOLDER_FOR_DATA:?err}/homarr/data:/data
+      - ${FOLDER_FOR_DATA:?err}/homarr/appdata:/appdata
     environment:
       - PUID=${PUID:?err}
       - PGID=${PGID:?err}
       - UMASK=${UMASK:?err}
       - TZ=${TIMEZONE:?err}
+      - SECRET_ENCRYPTION_KEY=${ENCRYPTION_KEY:?err}
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.homarr.rule=Host(`homarr.${SERVER_HOSTNAME}`)"
@@ -350,21 +447,28 @@ services:
       - "traefik.http.routers.homarr.entrypoints=web"
     networks:
       - mediastack
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 7575 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+
   jellyfin:
-    image: lscr.io/linuxserver/jellyfin:latest
+    image: linuxserver/jellyfin:10.11.6
     container_name: jellyfin
     restart: unless-stopped
-# Add Configurations for GPU Hardware Rendering Here:
-#    devices:
-#      - /dev/dri/renderD128:/dev/dri/renderD128
-#      - /dev/dri/card0:/dev/dri/card0
+    # Add Configurations for GPU Hardware Rendering Here:
+    #    devices:
+    #      - /dev/dri/renderD128:/dev/dri/renderD128
+    #      - /dev/dri/card0:/dev/dri/card0
     volumes:
       - ${FOLDER_FOR_DATA:?err}/jellyfin:/config
       - ${FOLDER_FOR_MEDIA:?err}/media:/data/media
     ports:
       - "${WEBUI_PORT_JELLYFIN:?err}:8096"
-#      - 7359:7359/udp      # Enable for DLNA - Only works on HOST Network Mode
-#      - 1900:1900/udp      # Enable for DLNA - Only works on HOST Network Mode
+      #      - 7359:7359/udp      # Enable for DLNA - Only works on HOST Network Mode
+      #      - 1900:1900/udp      # Enable for DLNA - Only works on HOST Network Mode
     environment:
       - PUID=${PUID:?err}
       - PGID=${PGID:?err}
@@ -377,9 +481,17 @@ services:
       - "traefik.http.routers.jellyfin.rule=Host(`jellyfin.${SERVER_HOSTNAME}`)"
       - "traefik.http.services.jellyfin.loadbalancer.server.port=8096"
       - "traefik.http.routers.jellyfin.entrypoints=web"
-  jellyseerr:
-    image: fallenbagel/jellyseerr:latest
-    container_name: jellyseerr
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8096/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  seerr:
+    image: seerr/seerr:v3.0.1
+    container_name: seerr
+    init: true
     restart: unless-stopped
     volumes:
       - ${FOLDER_FOR_DATA:?err}/jellyseerr:/app/config
@@ -394,43 +506,48 @@ services:
       - mediastack
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.jellyseerr.rule=Host(`jellyseerr.${SERVER_HOSTNAME}`)"
-      - "traefik.http.services.jellyseerr.loadbalancer.server.port=5055"
-      - "traefik.http.routers.jellyseerr.entrypoints=web"
-#  suggestarr:
-#    image: ciuse99/suggestarr:latest
-#    container_name: SuggestArr
-#    restart: unless-stopped
-#    ports:
-#      - "${WEBUI_PORT_SUGGESTARR}:5000"
-#    volumes:
-#      - ${FOLDER_FOR_DATA:?err}/suggestarr:/app/config/config_files
-#    environment:
-      # Optional: Only needed if something goes wrong and you need to inspect deeper
-#      - LOG_LEVEL=${LOG_LEVEL:-info}
-#    networks:
-#      - mediastack
-#    labels:
-#      - "traefik.enable=true"
-#      - "traefik.http.routers.suggestarr.rule=Host(`suggestarr.${SERVER_HOSTNAME}`)"
-#      - "traefik.http.services.suggestarr.loadbalancer.server.port=5000"
-#      - "traefik.http.routers.suggestarr.entrypoints=web"
+      - "traefik.http.routers.seerr.rule=Host(`seerr.${SERVER_HOSTNAME}`)"
+      - "traefik.http.services.seerr.loadbalancer.server.port=5055"
+      - "traefik.http.routers.seerr.entrypoints=web"
+      - "cloudflare.tunnel.enable=true"
+      - "cloudflare.tunnel.hostname=requests.${CF_EXTERNAL_HOSTNAME:?err}"
+      - "cloudflare.tunnel.service=http://seerr:5055"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:5055/api/v1/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
   wizarr:
     container_name: wizarr
-    image: ghcr.io/wizarrrr/wizarr:latest
+    image: ghcr.io/wizarrrr/wizarr:v2026.2.1
+    restart: unless-stopped
     ports:
       - ${WEBUI_PORT_WIZARR}:5690
     volumes:
       - ${FOLDER_FOR_DATA:?err}/wizarr/database:/data/database
     networks:
       - mediastack
+    environment:
+      - TZ=Europe/Paris
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.wizarr.rule=Host(`wizarr.${SERVER_HOSTNAME}`)"
       - "traefik.http.services.wizarr.loadbalancer.server.port=5690"
       - "traefik.http.routers.wizarr.entrypoints=web"
+      - "cloudflare.tunnel.enable=true"
+      - "cloudflare.tunnel.hostname=invite.${CF_EXTERNAL_HOSTNAME:?err}"
+      - "cloudflare.tunnel.service=http://wizarr:5690"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5690"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
   tdarr:
-    image: ghcr.io/haveagitgat/tdarr:latest
+    image: ghcr.io/haveagitgat/tdarr:2.58.02
     container_name: tdarr
     restart: unless-stopped
     profiles:
@@ -461,9 +578,15 @@ services:
       - "traefik.http.routers.tdarr.rule=Host(`tdarr.${SERVER_HOSTNAME}`)"
       - "traefik.http.services.tdarr.loadbalancer.server.port=${WEBUI_PORT_TDARR:?err}"
       - "traefik.http.routers.tdarr.entrypoints=web"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${WEBUI_PORT_TDARR}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   tdarr-node:
-    image: ghcr.io/haveagitgat/tdarr_node:latest
+    image: ghcr.io/haveagitgat/tdarr_node:2.58.02
     container_name: tdarr-node
     profiles:
       - tdarr
@@ -483,40 +606,113 @@ services:
       - serverPort=${TDARR_SERVER_PORT:?err}
     networks:
       - mediastack
-  tunnel:
-   container_name: tunnel
-   restart: always
-   image: cloudflare/cloudflared:latest
-   command: tunnel --no-autoupdate run
-   labels:
-      - "com.centurylinklabs.watchtower.enable=true"
-   environment:
-      TUNNEL_TOKEN: ${TUNNEL_TOKEN}
-   networks:
-      - mediastack
-  watchtower:
-    container_name: watchtower
-    image: containrrr/watchtower:latest
-    restart: always
+    depends_on:
+      tdarr:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "node"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  plexio:
+    image: ghcr.io/vanchaxy/plexio:0.1.15
+    restart: unless-stopped
+    container_name: plexio
     ports:
-      - "9999:8080"
+      - "${WEBUI_PORT_PLEXIO:?err}:80"
     environment:
-      WATCHTOWER_NOTIFICATIONS: email
-      WATCHTOWER_NOTIFICATION_EMAIL_FROM: ${MAIL_FROM}
-      WATCHTOWER_NOTIFICATION_EMAIL_TO:  ${MAIL_TO}
-      WATCHTOWER_NOTIFICATION_EMAIL_SERVER: ${MAIL_HOST}
-      WATCHTOWER_NOTIFICATION_EMAIL_SERVER_PORT: ${MAIL_PORT}
-      WATCHTOWER_NOTIFICATION_EMAIL_SERVER_USER: ${MAIL_USERNAME}
-      WATCHTOWER_NOTIFICATION_EMAIL_SERVER_PASSWORD_FILE: /run/secrets/mail_password
-      WATCHTOWER_NOTIFICATION_EMAIL_DELAY: 2
-      WATCHTOWER_NO_STARTUP_MESSAGE: true
-      WATCHTOWER_CLEANUP: true
-      WATCHTOWER_LABEL_ENABLE: false
-      WATCHTOWER_HTTP_API_METRICS: ${WATCHTOWER_HTTP_API_METRICS_ENABLED}
-      WATCHTOWER_HTTP_API_TOKEN: ${WATCHTOWER_HTTP_API_TOKEN}
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    secrets:
-      - mail_password
+      - PUID=${PUID:?err}
+      - PGID=${PGID:?err}
+      - UMASK=${UMASK:?err}
+      - TZ=${TIMEZONE:?err}
+      - PLEX_MATCHING_TOKEN=${PLEX_MATCHING_TOKEN:?err}
     networks:
       - mediastack
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.plexio.rule=Host(`plexio.${SERVER_HOSTNAME}`)"
+      - "traefik.http.services.plexio.loadbalancer.server.port=80"
+      - "traefik.http.routers.plexio.entrypoints=web"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  tunnel:
+    container_name: tunnel
+    restart: always
+    image: cloudflare/cloudflared:2026.2.0
+    command: tunnel --no-autoupdate --metrics 0.0.0.0:60123 run
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN}
+    networks:
+      - mediastack
+    healthcheck:
+      test: ["CMD", "cloudflared", "tunnel", "--metrics", "0.0.0.0:60123", "ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  dockflare:
+    image: alplat/dockflare:v3.0.6
+    container_name: dockflare
+    restart: unless-stopped
+    ports:
+      - "${WEBUI_PORT_DOCKFLARE}:5000"
+    environment:
+      - STATE_FILE_PATH=/app/data/state.json
+      - TZ=Europe/Paris
+      - SCAN_ALL_NETWORKS=false
+      - USE_EXTERNAL_CLOUDFLARED=false
+      - EXTERNAL_TUNNEL_ID=${DOCKERFLARE_EXTERNAL_TUNNEL_ID}
+      - TUNNEL_NAME=DockFlare-Tunnel
+      - CLOUDFLARED_NETWORK_NAME=mediastack
+      - CF_ACCOUNT_ID=${CF_ACCOUNT_ID}
+      - CF_API_TOKEN=${CF_API_TOKEN}
+      - CF_ZONE_ID=${CF_ZONE_ID}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${FOLDER_FOR_DATA:?err}/dockflare:/app/data
+    networks:
+      - mediastack
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dockflare.rule=Host(`dockflare.${SERVER_HOSTNAME}`)"
+      - "traefik.http.services.dockflare.loadbalancer.server.port=${WEBUI_PORT_DOCKFLARE:?err}"
+      - "traefik.http.routers.dockflare.entrypoints=web"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:5000/ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  dockhand:
+    image: fnsys/dockhand:latest
+    container_name: dockhand
+    restart: unless-stopped
+    ports:
+      - 3000:3000
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${FOLDER_FOR_DATA:?err}/dockfhand:/app/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dockhand.rule=Host(`dockhand.${SERVER_HOSTNAME}`)"
+      - "traefik.http.services.dockhand.loadbalancer.server.port=3000"
+      - "traefik.http.routers.dockhand.entrypoints=web"
+    networks:
+      - mediastack
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
