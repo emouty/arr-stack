@@ -7,6 +7,9 @@ networks:
       config:
         - subnet: ${DOCKER_SUBNET:?err}
           gateway: ${DOCKER_GATEWAY:?err}
+  dockflare-internal:
+    name: dockflare-internal
+
 secrets:
   plex_claim:
     file: ./secret.d/plex_claim
@@ -16,6 +19,7 @@ secrets:
     file: ./secret.d/vpn_username
   mail_password:
     file: ./secret.d/mail_password
+
 services:
   traefik:
     image: "traefik:v3.6.9"
@@ -660,15 +664,64 @@ services:
       retries: 5
       start_period: 30s
 
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:v0.4.1
+    container_name: docker-socket-proxy
+    restart: unless-stopped
+    environment:
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - CONTAINERS=1
+      - EVENTS=1
+      - NETWORKS=1
+      - IMAGES=1
+      - POST=1
+      - PING=1
+      - INFO=1
+      - EXEC=1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - dockflare-internal
+
+  dockflare-init:
+    image: alpine:3.20
+    container_name: dockflare-init
+    command: ["sh", "-c", "chown -R 65532:65532 /app/data"]
+    volumes:
+      - ${FOLDER_FOR_DATA:?err}/dockflare:/app/data
+    networks:
+      - dockflare-internal
+    restart: "no"
+
+  dockflare-redis:
+    image: redis:7-alpine
+    container_name: dockflare-redis
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    volumes:
+      - ${FOLDER_FOR_DATA:?err}/dockflare-redis:/data
+    networks:
+      - dockflare-internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
   dockflare:
     image: alplat/dockflare:v3.0.6
     container_name: dockflare
     restart: unless-stopped
     ports:
       - "${WEBUI_PORT_DOCKFLARE}:5000"
+    volumes:
+      - ${FOLDER_FOR_DATA:?err}/dockflare:/app/data
     environment:
-      - STATE_FILE_PATH=/app/data/state.json
       - TZ=Europe/Paris
+      - REDIS_URL=redis://dockflare-redis:6379/0
+      - REDIS_DB_INDEX=0
+      - DOCKER_HOST=tcp://docker-socket-proxy:2375
       - SCAN_ALL_NETWORKS=false
       - USE_EXTERNAL_CLOUDFLARED=false
       - EXTERNAL_TUNNEL_ID=${DOCKERFLARE_EXTERNAL_TUNNEL_ID}
@@ -676,12 +729,16 @@ services:
       - CLOUDFLARED_NETWORK_NAME=mediastack
       - CF_ACCOUNT_ID=${CF_ACCOUNT_ID}
       - CF_API_TOKEN=${CF_API_TOKEN}
-      - CF_ZONE_ID=${CF_ZONE_ID}
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ${FOLDER_FOR_DATA:?err}/dockflare:/app/data
+    depends_on:
+      docker-socket-proxy:
+        condition: service_started
+      dockflare-init:
+        condition: service_completed_successfully
+      dockflare-redis:
+        condition: service_healthy
     networks:
       - mediastack
+      - dockflare-internal
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.dockflare.rule=Host(`dockflare.${SERVER_HOSTNAME}`)"
@@ -703,6 +760,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${FOLDER_FOR_DATA:?err}/dockfhand:/app/data
+      - ./:/local_docker_compose
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.dockhand.rule=Host(`dockhand.${SERVER_HOSTNAME}`)"
