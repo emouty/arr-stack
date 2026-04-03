@@ -677,7 +677,7 @@ services:
       start_period: 30s
 
   docker-socket-proxy:
-    image: tecnativa/docker-socket-proxy:v0.4.1
+    image: tecnativa/docker-socket-proxy:v0.4.2
     container_name: docker-socket-proxy
     restart: unless-stopped
     environment:
