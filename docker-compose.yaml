@@ -461,13 +461,23 @@ services:
   jellyfin:
     image: linuxserver/jellyfin:10.11.6
     container_name: jellyfin
+    # deploy:
+    #   resources:
+    #     limits:
+    #       memory: 4G  # Explicitly allow >2GB for .NET startup
+    #     reservations:
+    #       memory: 2G
     restart: unless-stopped
     # Add Configurations for GPU Hardware Rendering Here:
-    #    devices:
-    #      - /dev/dri/renderD128:/dev/dri/renderD128
-    #      - /dev/dri/card0:/dev/dri/card0
+    devices:
+      - /dev/dri/renderD128:/dev/dri/renderD128
+      - /dev/dri/card0:/dev/dri/card0
+    group_add:
+      - "104"   # GID de renderD128
+      - "44"    # GID de card0
     volumes:
       - ${FOLDER_FOR_DATA:?err}/jellyfin:/config
+      - ${FOLDER_FOR_DATA:?err}/jellyfin/custom-cont-init.d:/custom-cont-init.d:ro
       - ${FOLDER_FOR_MEDIA:?err}/media:/data/media
     ports:
       - "${WEBUI_PORT_JELLYFIN:?err}:8096"
@@ -478,6 +488,8 @@ services:
       - PGID=${PGID:?err}
       - UMASK=${UMASK:?err}
       - TZ=${TIMEZONE:?err}
+      - LIBVA_DRIVER_NAME=iHD
+      - LIBVA_DRIVERS_PATH=/usr/lib/jellyfin-ffmpeg/lib/dri
     networks:
       - mediastack
     labels:
