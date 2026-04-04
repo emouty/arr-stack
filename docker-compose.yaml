@@ -537,7 +537,7 @@ services:
 
   wizarr:
     container_name: wizarr
-    image: ghcr.io/wizarrrr/wizarr:v2026.2.1
+    image: ghcr.io/wizarrrr/wizarr:v2026.4.0
     restart: unless-stopped
     ports:
       - ${WEBUI_PORT_WIZARR}:5690
