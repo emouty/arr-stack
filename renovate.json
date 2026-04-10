@@ -8,18 +8,21 @@
     {
       "matchDatasources": ["docker"],
       "automerge": true,
+      "platformAutomerge": true,
       "matchUpdateTypes": ["patch"]
     },
     {
       "matchDatasources": ["docker"],
       "matchPackageNames": ["cloudflare/cloudflared"],
       "automerge": true,
+      "platformAutomerge": true,
       "matchUpdateTypes": ["major", "minor", "patch"]
     },
     {
       "matchDatasources": ["docker"],
       "matchPackageNames": ["alpine"],
       "automerge": true,
+      "platformAutomerge": true,
       "matchUpdateTypes": ["major", "minor", "patch"]
     }
   ]
