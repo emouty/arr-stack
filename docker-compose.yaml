@@ -505,7 +505,7 @@ services:
       start_period: 60s
 
   seerr:
-    image: seerr/seerr:v3.1.0
+    image: seerr/seerr:v3.2.0
     container_name: seerr
     init: true
     restart: unless-stopped
