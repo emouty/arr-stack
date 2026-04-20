@@ -9,21 +9,24 @@
       "matchDatasources": ["docker"],
       "automerge": true,
       "platformAutomerge": true,
-      "matchUpdateTypes": ["patch"]
+      "matchUpdateTypes": ["patch"],
+      "ignoreTests": true
     },
     {
       "matchDatasources": ["docker"],
       "matchPackageNames": ["cloudflare/cloudflared"],
       "automerge": true,
       "platformAutomerge": true,
-      "matchUpdateTypes": ["major", "minor", "patch"]
+      "matchUpdateTypes": ["major", "minor", "patch"],
+      "ignoreTests": true
     },
     {
       "matchDatasources": ["docker"],
       "matchPackageNames": ["alpine"],
       "automerge": true,
       "platformAutomerge": true,
-      "matchUpdateTypes": ["major", "minor", "patch"]
+      "matchUpdateTypes": ["major", "minor", "patch"],
+      "ignoreTests": true
     }
   ]
 }
