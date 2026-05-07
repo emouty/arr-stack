@@ -722,7 +722,7 @@ services:
       start_period: 10s
 
   dockflare:
-    image: alplat/dockflare:v3.1.1
+    image: alplat/dockflare:v3.1.2
     container_name: dockflare
     restart: unless-stopped
     ports:
