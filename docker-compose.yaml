@@ -602,7 +602,7 @@ services:
       start_period: 30s
 
   tdarr-node:
-    image: ghcr.io/haveagitgat/tdarr_node:2.73.01
+    image: ghcr.io/haveagitgat/tdarr_node:2.74.01
     container_name: tdarr-node
     profiles:
       - tdarr
