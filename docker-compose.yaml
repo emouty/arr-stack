@@ -563,7 +563,7 @@ services:
       start_period: 30s
 
   tdarr:
-    image: ghcr.io/haveagitgat/tdarr:2.73.01
+    image: ghcr.io/haveagitgat/tdarr:2.74.01
     container_name: tdarr
     restart: unless-stopped
     profiles:
