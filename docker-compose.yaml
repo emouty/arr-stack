@@ -428,7 +428,7 @@ services:
       start_period: 30s
 
   homarr:
-    image: ghcr.io/homarr-labs/homarr:v1.61.0
+    image: ghcr.io/homarr-labs/homarr:v1.63.0
     container_name: homarr
     restart: unless-stopped
     ports:
