@@ -696,7 +696,7 @@ services:
       - dockflare-internal
 
   dockflare-init:
-    image: alpine:3.23
+    image: alpine:3.24
     container_name: dockflare-init
     command: ["sh", "-c", "chown -R 65532:65532 /app/data"]
     volumes:
