@@ -288,7 +288,7 @@ services:
       start_period: 30s
 
   bazarr:
-    image: linuxserver/bazarr:1.5.6
+    image: linuxserver/bazarr:1.6.0
     container_name: bazarr
     restart: unless-stopped
     volumes:
