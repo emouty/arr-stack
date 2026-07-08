@@ -133,7 +133,7 @@ services:
       start_period: 30s
 
   qbittorrent:
-    image: linuxserver/qbittorrent:5.2.2
+    image: linuxserver/qbittorrent:5.2.3
     container_name: qbittorrent
     restart: unless-stopped
     volumes:
