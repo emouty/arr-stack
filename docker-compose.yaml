@@ -355,7 +355,7 @@ services:
       start_period: 60s
 
   byparr:
-    image: ghcr.io/thephaseless/byparr:2.1.0
+    image: ghcr.io/thephaseless/byparr:3.0.3
     container_name: byparr
     init: true
     ulimits:
