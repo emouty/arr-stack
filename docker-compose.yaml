@@ -357,6 +357,9 @@ services:
   byparr:
     image: ghcr.io/thephaseless/byparr:2.1.0
     container_name: byparr
+    init: true
+    ulimits:
+      core: 0
     restart: unless-stopped
     ports:
       - "${BYPARR_PORT:?err}:8191"
@@ -377,6 +380,7 @@ services:
   flaresolverr:
     image: ghcr.io/flaresolverr/flaresolverr:v3.5.0
     container_name: flaresolverr
+    init: true
     restart: unless-stopped
     ports:
       - "${FLARESOLVERR_PORT:?err}:8191"
