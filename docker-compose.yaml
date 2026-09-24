@@ -201,7 +201,7 @@ services:
       start_period: 30s
 
   radarr:
-    image: linuxserver/radarr:6.3.0
+    image: linuxserver/radarr:6.4.4
     container_name: radarr
     restart: unless-stopped
     volumes:
