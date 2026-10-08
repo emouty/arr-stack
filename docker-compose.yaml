@@ -463,7 +463,7 @@ services:
       start_period: 90s
 
   jellyfin:
-    image: linuxserver/jellyfin:10.11.11ubu2604-ls47
+    image: linuxserver/jellyfin:12.2ubu2604-ls53
     container_name: jellyfin
     # deploy:
     #   resources:
