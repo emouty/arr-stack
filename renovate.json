@@ -27,6 +27,56 @@
       "platformAutomerge": true,
       "matchUpdateTypes": ["major", "minor", "patch"],
       "ignoreTests": true
+    },
+    {
+      "description": "Upstream release notes instead of linuxserver wrapper repo",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["linuxserver/radarr"],
+      "sourceUrl": "https://github.com/Radarr/Radarr"
+    },
+    {
+      "description": "Upstream release notes instead of linuxserver wrapper repo",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["linuxserver/sonarr"],
+      "sourceUrl": "https://github.com/Sonarr/Sonarr"
+    },
+    {
+      "description": "Upstream release notes instead of linuxserver wrapper repo",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["linuxserver/lidarr"],
+      "sourceUrl": "https://github.com/Lidarr/Lidarr"
+    },
+    {
+      "description": "Upstream release notes instead of linuxserver wrapper repo",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["linuxserver/prowlarr"],
+      "sourceUrl": "https://github.com/Prowlarr/Prowlarr"
+    },
+    {
+      "description": "Upstream release notes instead of linuxserver wrapper repo",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["linuxserver/bazarr"],
+      "sourceUrl": "https://github.com/morpheus65535/bazarr"
+    },
+    {
+      "description": "linuxserver stopped plain X.Y.Z tags after 10.11.11; regex versioning accepts 12.2ubu2604-ls53 style",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["linuxserver/jellyfin"],
+      "sourceUrl": "https://github.com/jellyfin/jellyfin",
+      "versioning": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)(?:\\.(?<patch>\\d+))?(?:ubu\\d+-ls(?<build>\\d+))?$"
+    },
+    {
+      "description": "Upstream tags are vX.Y.Z.BUILD; strip build so release notes match the X.Y.Z docker tag",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["linuxserver/radarr", "linuxserver/sonarr", "linuxserver/lidarr", "linuxserver/prowlarr"],
+      "extractVersion": "^v?(?<version>\\d+\\.\\d+\\.\\d+)(?:\\.\\d+)?$"
+    },
+    {
+      "description": "Upstream tags are release-X.Y.Z; single-digit major also drops legacy 20.04.x docker tags",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["linuxserver/qbittorrent"],
+      "sourceUrl": "https://github.com/qbittorrent/qBittorrent",
+      "extractVersion": "^(?:release-)?(?<version>\\d\\.\\d+\\.\\d+)$"
     }
   ]
 }
