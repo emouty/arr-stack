@@ -59,11 +59,12 @@
       "sourceUrl": "https://github.com/morpheus65535/bazarr"
     },
     {
-      "description": "linuxserver stopped plain X.Y.Z tags after 10.11.11; regex versioning accepts 12.2ubu2604-ls53 style. Tag cannot match upstream vX.Y, so keep linuxserver notes inline and link upstream release",
+      "description": "linuxserver stopped plain X.Y.Z tags after 10.11.11. Pin version-X.Yubu2604 tags and split off the ubuntu suffix so the version is bare X.Y and matches upstream vX.Y release notes",
       "matchDatasources": ["docker"],
       "matchPackageNames": ["linuxserver/jellyfin"],
-      "changelogUrl": "https://github.com/jellyfin/jellyfin/releases/tag/v{{newMajor}}.{{newMinor}}{{#if newPatch}}.{{newPatch}}{{/if}}",
-      "versioning": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)(?:\\.(?<patch>\\d+))?(?:ubu\\d+-ls(?<build>\\d+))?$"
+      "sourceUrl": "https://github.com/jellyfin/jellyfin",
+      "versionCompatibility": "^version-(?<version>\\d+\\.\\d+(?:\\.\\d+)?)(?<compatibility>ubu\\d+)$",
+      "versioning": "loose"
     },
     {
       "description": "Upstream tags are vX.Y.Z.BUILD; strip build so release notes match the X.Y.Z docker tag",
