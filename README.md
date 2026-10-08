@@ -121,3 +121,32 @@ After successful deployment, services will be available at:
 - Prowlarr: `http://prowlarr.<my_host>.local`
 - Bazarr: `http://bazarr.<my_host>.local`
 - SuggestArr: `http://suggestarr.<my_host>.local`
+
+## trailer-sync (YouTube playlist -> Seerr watchlist)
+
+`trailer-sync/sync.py` reads an **unlisted** YouTube playlist of trailers through its public RSS feed. It matches each trailer to TMDB through Seerr search and adds it to the Seerr watchlist ("Liste de suivi") of the user that owns the API key. No Google credential is needed.
+
+Matching uses heuristics only:
+- A certain match is when the trailer's YouTube ID is listed in the TMDB videos of a candidate.
+- Otherwise the cleaned title must match a TMDB title exactly, with the year checked.
+- Unmatched trailers are logged as `UNMATCHED` and retried on every run.
+
+Setup:
+
+```bash
+echo "<seerr api key>" > secret.d/seerr_api_key            # Seerr > Settings > General > API Key
+chown 1000:1000 secret.d/seerr_api_key && chmod 600 secret.d/seerr_api_key   # container runs as PUID
+mkdir -p "$FOLDER_FOR_DATA/trailer-sync" && chown 1000:1000 "$FOLDER_FOR_DATA/trailer-sync"
+# .env: TRAILER_PLAYLIST_ID=<list= part of the playlist URL>
+docker compose run --rm trailer-sync python /app/sync.py --once --dry-run   # review matches
+docker compose up -d trailer-sync
+```
+
+The RSS feed only lists the 15 newest items. To backfill an older or larger playlist, run the import once:
+
+```bash
+uvx yt-dlp --flat-playlist -J "https://www.youtube.com/playlist?list=<id>" > "$FOLDER_FOR_DATA/trailer-sync/backfill.json"
+docker compose run --rm trailer-sync python /app/sync.py --import /data/backfill.json
+```
+
+Run the tests with `cd trailer-sync && python -m unittest test_match`.

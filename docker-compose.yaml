@@ -19,6 +19,8 @@ secrets:
     file: ./secret.d/vpn_username
   mail_password:
     file: ./secret.d/mail_password
+  seerr_api_key:
+    file: ./secret.d/seerr_api_key
 
 services:
   traefik:
@@ -538,6 +540,28 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+
+  trailer-sync:
+    image: python:3.14.8-slim
+    container_name: trailer-sync
+    init: true
+    restart: unless-stopped
+    command: ["python", "-u", "/app/sync.py"]
+    user: "${PUID:?err}:${PGID:?err}"
+    environment:
+      - TZ=${TIMEZONE:?err}
+      - PLAYLIST_ID=${TRAILER_PLAYLIST_ID:?err}
+      - TRAILER_SYNC_INTERVAL=${TRAILER_SYNC_INTERVAL:-1800}
+      - SEERR_URL=http://seerr:5055
+    volumes:
+      - ./trailer-sync:/app:ro
+      - ${FOLDER_FOR_DATA:?err}/trailer-sync:/data
+    secrets:
+      - seerr_api_key
+    networks:
+      - mediastack
+    depends_on:
+      - seerr
 
   wizarr:
     container_name: wizarr
