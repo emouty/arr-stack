@@ -792,7 +792,7 @@ services:
       start_period: 20s
 
   dockhand:
-    image: fnsys/dockhand:v1.0.53
+    image: fnsys/dockhand:v1.0.54
     container_name: dockhand
     restart: unless-stopped
     ports:
