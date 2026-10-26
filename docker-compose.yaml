@@ -542,7 +542,7 @@ services:
       start_period: 30s
 
   trailer-sync:
-    image: python:3.15.1-slim
+    image: python:3.15.2-slim
     container_name: trailer-sync
     init: true
     restart: unless-stopped
