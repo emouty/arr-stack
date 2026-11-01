@@ -401,7 +401,7 @@ services:
       start_period: 20s
 
   prowlarr:
-    image: linuxserver/prowlarr:2.6.5
+    image: linuxserver/prowlarr:2.7.0
     container_name: prowlarr
     restart: unless-stopped
     volumes:
