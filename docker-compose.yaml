@@ -10,6 +10,9 @@ networks:
   dockflare-internal:
     name: dockflare-internal
 
+volumes:
+  soulsync_data:
+
 secrets:
   plex_claim:
     file: ./secret.d/plex_claim
@@ -127,6 +130,11 @@ services:
       - "traefik.http.routers.qbittorrent.rule=Host(`qbittorrent.${SERVER_HOSTNAME}`)"
       - "traefik.http.services.qbittorrent.loadbalancer.server.port=${WEBUI_PORT_QBITTORRENT:?err}"
       - "traefik.http.routers.qbittorrent.entrypoints=web"
+      - "traefik.http.routers.qbittorrent.service=qbittorrent"
+      - "traefik.http.routers.slskd.rule=Host(`slskd.${SERVER_HOSTNAME}`)"
+      - "traefik.http.services.slskd.loadbalancer.server.port=5030"
+      - "traefik.http.routers.slskd.entrypoints=web"
+      - "traefik.http.routers.slskd.service=slskd"
     healthcheck:
       test: ["CMD", "/gluetun-entrypoint", "healthcheck"]
       interval: 30s
@@ -288,6 +296,58 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+
+  slskd:
+    image: slskd/slskd:0.26.2
+    container_name: slskd
+    restart: unless-stopped
+    init: true
+    user: "${PUID:?err}:${PGID:?err}"
+    volumes:
+      - ${FOLDER_FOR_DATA:?err}/slskd:/app
+      - ${FOLDER_FOR_MEDIA:?err}/downloads/soulseek:/downloads
+      # Soulseek bans peers that share nothing: share the library, read-only
+      - ${FOLDER_FOR_MEDIA:?err}/media/music:/music:ro
+    environment:
+      - TZ=${TIMEZONE:?err}
+      - SLSKD_UMASK=${UMASK:?err}
+      - SLSKD_SHARED_DIR=/music
+      - SLSKD_DOWNLOADS_DIR=/downloads
+    # SLSKD_SLSK_USERNAME, SLSKD_SLSK_PASSWORD, SLSKD_USERNAME, SLSKD_PASSWORD, SLSKD_API_KEY
+    env_file: ./secret.d/slskd.env
+    # P2P traffic goes through the VPN, like qbittorrent; web UI is routed by traefik labels on gluetun
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
+
+  soulsync:
+    image: boulderbadgedad/soulsync:3.6.6
+    container_name: soulsync
+    restart: unless-stopped
+    init: true
+    volumes:
+      - ${FOLDER_FOR_DATA:?err}/soulsync/config:/app/config
+      - ${FOLDER_FOR_DATA:?err}/soulsync/logs:/app/logs
+      # upstream requires a named volume here, a bind mount hides files the app ships
+      - soulsync_data:/app/data
+      - ${FOLDER_FOR_MEDIA:?err}/downloads/soulseek:/app/downloads
+      - ${FOLDER_FOR_MEDIA:?err}/media/music:/app/Transfer
+    ports:
+      # Spotify OAuth callback; host 8888 is taken by the gluetun HTTP proxy
+      - "8898:8888"
+    environment:
+      - PUID=${PUID:?err}
+      - PGID=${PGID:?err}
+      - UMASK=${UMASK:?err}
+      - TZ=${TIMEZONE:?err}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.soulsync.rule=Host(`soulsync.${SERVER_HOSTNAME}`)"
+      - "traefik.http.services.soulsync.loadbalancer.server.port=8008"
+      - "traefik.http.routers.soulsync.entrypoints=web"
+    networks:
+      - mediastack
 
   bazarr:
     image: linuxserver/bazarr:1.6.2
