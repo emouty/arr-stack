@@ -34,6 +34,8 @@ Secrets are stored as plain text files in the `secret.d` directory. Here's how t
    echo "your_plex_token" > secret.d/plex_claim
    echo "your_email_password" > secret.d/mail_password
    echo "your_cloudflared_token" > secret.d/cloudflared_apikey
+   # slskd (Soulseek client used by SoulSync): env file, not a docker secret
+   printf 'SLSKD_SLSK_USERNAME=...\nSLSKD_SLSK_PASSWORD=...\nSLSKD_USERNAME=...\nSLSKD_PASSWORD=...\nSLSKD_API_KEY=...\n' > secret.d/slskd.env
    ```
 
 3. **Set restrictive permissions**:
