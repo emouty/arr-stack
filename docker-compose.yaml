@@ -333,6 +333,7 @@ services:
       - soulsync_data:/app/data
       - ${FOLDER_FOR_MEDIA:?err}/downloads/soulseek:/app/downloads
       - ${FOLDER_FOR_MEDIA:?err}/media/music:/app/Transfer
+      - ${FOLDER_FOR_MEDIA:?err}/downloads/soulsync-import:/app/Staging
     ports:
       # Spotify OAuth callback; host 8888 is taken by the gluetun HTTP proxy
       - "8898:8888"
