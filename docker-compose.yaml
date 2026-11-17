@@ -334,6 +334,8 @@ services:
       - ${FOLDER_FOR_MEDIA:?err}/downloads/soulseek:/app/downloads
       - ${FOLDER_FOR_MEDIA:?err}/media/music:/app/Transfer
       - ${FOLDER_FOR_MEDIA:?err}/downloads/soulsync-import:/app/Staging
+      # same path as qbittorrent sees it, so torrent content_path resolves without mapping
+      - ${FOLDER_FOR_MEDIA:?err}/downloads:/data/downloads
     ports:
       # Spotify OAuth callback; host 8888 is taken by the gluetun HTTP proxy
       - "8898:8888"
