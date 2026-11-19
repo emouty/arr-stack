@@ -322,7 +322,7 @@ services:
         condition: service_healthy
 
   soulsync:
-    image: boulderbadgedad/soulsync:3.6.6
+    image: boulderbadgedad/soulsync:3.6.7
     container_name: soulsync
     restart: unless-stopped
     init: true
